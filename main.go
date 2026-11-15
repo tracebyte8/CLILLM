@@ -76,6 +76,7 @@ func getModels() ([]string, error) {
 
 	return models, nil
 }
+
 func selectModel(sc *bufio.Scanner) (string, error) {
 
 	models, err := getModels()
@@ -128,9 +129,30 @@ func CatchSignal() {
 
 }
 
+// loadDocu checks if document exists and passes it to python script
+func loadDocu(path string) (string, error) {
+	// check if the file exist :
+	info, err := os.Stat(path)
+	if err != nil {
+		fmt.Println("the file doesnt exist ...")
+		return "", err
+	}
+	// check if its not directory :
+	if info.IsDir() {
+		return "", fmt.Errorf("%s it directory not a file ...", info.Name())
+	}
+
+	cmd := exec.Command("python3", "readoc.py", path)
+	content, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
+}
+
 func main() {
 
-	//go CatchSignal()
 	sc := bufio.NewScanner(os.Stdin)
 
 	printBanner()
@@ -151,8 +173,33 @@ func main() {
 			return
 		}
 
-		userInput := sc.Text()
+		userInput := strings.TrimSpace(sc.Text())
 
+		// handle upload check
+		if userInput == "/upload" || strings.HasPrefix(userInput, "/upload ") {
+			rest := strings.TrimSpace(strings.TrimPrefix(userInput, "/upload"))
+			if rest == "" {
+				fmt.Println("error: please provide a file path after /upload")
+				continue
+			}
+
+			parts := strings.SplitN(rest, " ", 2)
+			path := parts[0]
+
+			fileContent, err := loadDocu(path)
+			if err != nil {
+				fmt.Println("error:", err)
+				continue
+			}
+
+			fmt.Println("file uploaded!")
+
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+				userInput = fmt.Sprintf("Here is the text content extracted from the document:\n\"\"\"\n%s\n\"\"\"\n\nQuestion: %s", strings.TrimSpace(fileContent), strings.TrimSpace(parts[1]))
+			} else {
+				userInput = fmt.Sprintf("Summarize the following document text:\n\"\"\"\n%s\n\"\"\"", strings.TrimSpace(fileContent))
+			}
+		}
 		// 2. Construct the HTTP request DATA :
 		requestData := ChatRequest{
 			Model: model,
@@ -187,12 +234,10 @@ func main() {
 		req.Header.Set("Content-Type", "application/json")
 
 		// 5. Send request
-
-		// create an HTTP client , and set the request time .
 		client := &http.Client{
 			Timeout: 5 * time.Minute,
 		}
-		//send the request and recieve the http response .
+
 		resp, err := client.Do(req)
 		if err != nil {
 			fmt.Println("Connection error:", err)
@@ -216,6 +261,6 @@ func main() {
 		}
 
 		// 8. Display response
-		fmt.Println("\nAI:", result.Message.Content)
+		fmt.Println("\nAi>", result.Message.Content)
 	}
 }
