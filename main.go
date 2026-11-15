@@ -164,7 +164,14 @@ func main() {
 
 	// lunch go routine to catch signal , if user press ctrl + c
 	go CatchSignal()
-
+	const maxHistory = 15
+	// this for forcing the llm use history chat
+	var history = []Message{
+		{
+			Role:    "system",
+			Content: "You are a helpful local assistant. Always use the conversation history to remember facts the user tells you, including their name and numbers, and answer directly.",
+		},
+	}
 	for {
 		//get the input from user :
 		fmt.Print("\nYou > ")
@@ -174,6 +181,12 @@ func main() {
 		}
 
 		userInput := strings.TrimSpace(sc.Text())
+
+		if userInput == "/clear" {
+			history = nil
+			fmt.Println("Chat history cleared!")
+			continue
+		}
 
 		// handle upload check
 		if userInput == "/upload" || strings.HasPrefix(userInput, "/upload ") {
@@ -200,16 +213,19 @@ func main() {
 				userInput = fmt.Sprintf("Summarize the following document text:\n\"\"\"\n%s\n\"\"\"", strings.TrimSpace(fileContent))
 			}
 		}
+
+		// save the message so you can ask llm about the last qst .. :
+		// wee add the userinput with history :
+		history = append(history, Message{
+			Role:    "user",
+			Content: userInput,
+		})
+
 		// 2. Construct the HTTP request DATA :
 		requestData := ChatRequest{
-			Model: model,
-			Messages: []Message{
-				{
-					Role:    "user",
-					Content: userInput,
-				},
-			},
-			Stream: false,
+			Model:    model,
+			Messages: history,
+			Stream:   false,
 		}
 
 		// 3. Convert Go structure into JSON
@@ -262,5 +278,15 @@ func main() {
 
 		// 8. Display response
 		fmt.Println("\nAi>", result.Message.Content)
+		// Save llm reply to history
+		history = append(history, Message{
+			Role:    "assistant",
+			Content: result.Message.Content,
+		})
+
+		// save the last 15 messages (7 turns)
+		if len(history) > maxHistory {
+			history = history[len(history)-maxHistory:]
+		}
 	}
 }
